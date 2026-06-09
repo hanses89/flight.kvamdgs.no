@@ -1,0 +1,667 @@
+{% comment %}
+  Section: Flight Path Visualizer
+  Shows a Bézier curve flight path based on disc flight numbers.
+  Reads from product metafields: custom.speed, custom.glide, custom.turn, custom.fade
+  Can also be used standalone with section settings.
+{% endcomment %}
+
+{%- liquid
+  assign speed = section.settings.speed
+  assign glide = section.settings.glide
+  assign turn  = section.settings.turn
+  assign fade  = section.settings.fade
+
+  if product
+    if product.metafields.custom.speed != blank
+      assign speed = product.metafields.custom.speed | plus: 0
+    endif
+    if product.metafields.custom.glide != blank
+      assign glide = product.metafields.custom.glide | plus: 0
+    endif
+    if product.metafields.custom.turn != blank
+      assign turn = product.metafields.custom.turn | plus: 0
+    endif
+    if product.metafields.custom.fade != blank
+      assign fade = product.metafields.custom.fade | plus: 0
+    endif
+  endif
+-%}
+
+<div
+  class="flight-path-section"
+  id="flight-path-{{ section.id }}"
+  data-speed="{{ speed }}"
+  data-glide="{{ glide }}"
+  data-turn="{{ turn }}"
+  data-fade="{{ fade }}"
+>
+
+  <div class="fp-inner">
+
+    {%- if section.settings.show_title -%}
+      <div class="fp-header">
+        <h2 class="fp-title">{{ section.settings.title | default: 'Flybane' }}</h2>
+        {%- if section.settings.show_numbers -%}
+        <div class="fp-numbers">
+          <div class="fp-num">
+            <span class="fp-num__label">Speed</span>
+            <span class="fp-num__val" id="fp-speed-{{ section.id }}">{{ speed }}</span>
+          </div>
+          <div class="fp-num">
+            <span class="fp-num__label">Glide</span>
+            <span class="fp-num__val" id="fp-glide-{{ section.id }}">{{ glide }}</span>
+          </div>
+          <div class="fp-num">
+            <span class="fp-num__label">Turn</span>
+            <span class="fp-num__val" id="fp-turn-{{ section.id }}">{{ turn }}</span>
+          </div>
+          <div class="fp-num">
+            <span class="fp-num__label">Fade</span>
+            <span class="fp-num__val" id="fp-fade-{{ section.id }}">{{ fade }}</span>
+          </div>
+        </div>
+        {%- endif -%}
+      </div>
+    {%- endif -%}
+
+    <div class="fp-canvas-wrap">
+      <canvas
+        id="fp-canvas-{{ section.id }}"
+        class="fp-canvas"
+        width="800"
+        height="340"
+        aria-label="Disc golf flight path visualisation"
+        role="img"
+      ></canvas>
+      <div class="fp-legend">
+        <span class="fp-legend__dot fp-legend__dot--rhbh"></span>
+        <span class="fp-legend__text">RHBH</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<style>
+  #flight-path-{{ section.id }} {
+    --fp-bg:        {{ section.settings.bg_color }};
+    --fp-track:     {{ section.settings.track_color }};
+    --fp-disc:      {{ section.settings.disc_color }};
+    --fp-grid:      rgba(255,255,255,0.06);
+    --fp-text:      #e8e4dc;
+    --fp-subtext:   rgba(232,228,220,0.55);
+    --fp-radius:    {{ section.settings.border_radius }}px;
+    --fp-pad:       2rem;
+    background: var(--fp-bg);
+    border-radius: var(--fp-radius);
+    padding: var(--fp-pad);
+    font-family: 'DM Mono', 'Courier New', monospace;
+    overflow: hidden;
+    position: relative;
+  }
+
+  #flight-path-{{ section.id }}::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 40% at 10% 80%, rgba(255,255,255,0.03) 0%, transparent 70%),
+      radial-gradient(ellipse 40% 60% at 90% 20%, rgba(255,255,255,0.02) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .fp-inner {
+    position: relative;
+    z-index: 1;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+
+  .fp-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .fp-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--fp-subtext);
+    margin: 0;
+    padding: 0;
+  }
+
+  .fp-numbers {
+    display: flex;
+    gap: 1.5rem;
+  }
+
+  .fp-num {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+  }
+
+  .fp-num__label {
+    font-size: 0.6rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--fp-subtext);
+  }
+
+  .fp-num__val {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--fp-text);
+    line-height: 1;
+    transition: color 0.3s ease;
+  }
+
+  .fp-canvas-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 800 / 340;
+    border-radius: calc(var(--fp-radius) - 6px);
+    overflow: hidden;
+  }
+
+  .fp-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .fp-legend {
+    position: absolute;
+    bottom: 10px;
+    right: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .fp-legend__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--fp-disc);
+    box-shadow: 0 0 6px var(--fp-disc);
+  }
+
+  .fp-legend__text {
+    font-size: 0.6rem;
+    letter-spacing: 0.12em;
+    color: var(--fp-subtext);
+    text-transform: uppercase;
+  }
+
+  @media (max-width: 600px) {
+    #flight-path-{{ section.id }} {
+      --fp-pad: 1rem;
+    }
+    .fp-num__val { font-size: 1rem; }
+    .fp-numbers { gap: 1rem; }
+  }
+</style>
+
+<script>
+(function () {
+  'use strict';
+
+  function drawFlightPath(sectionId) {
+    var wrap   = document.getElementById('flight-path-' + sectionId);
+    var canvas = document.getElementById('fp-canvas-' + sectionId);
+    if (!wrap || !canvas) return;
+
+    var ctx = canvas.getContext('2d');
+    var W   = canvas.width;   // 800
+    var H   = canvas.height;  // 340
+
+    var speed = parseFloat(wrap.dataset.speed) || 5;
+    var glide = parseFloat(wrap.dataset.glide) || 4;
+    var turn  = parseFloat(wrap.dataset.turn)  || 0;
+    var fade  = parseFloat(wrap.dataset.fade)  || 1;
+
+    /* ------------------------------------------------------------------
+       FLIGHT PATH ALGORITHM
+       We model the flight as two Bézier segments:
+         1. High-speed phase  (hyzer/anhyzer dominated by Turn)
+         2. Slow-speed phase  (fade takes over at end)
+
+       Canvas coords: x = distance thrown (left → right)
+                      y = lateral position (top = left, bottom = right for RHBH)
+
+       Origin (disc release): left-center of canvas with a small top margin.
+
+       Physical mappings
+       -----------------
+       speed : how far the disc travels before fade kicks in
+               → total horizontal length ≈ lerp(30%, 90%, speed/14) * W
+       glide : how long the disc stays aloft / maintains trajectory
+               → controls the forward position of CP2 (the late-phase handle)
+       turn  : early hyzer/anhyzer — negative = disc turns RIGHT for RHBH
+               → CP1 lateral offset (negative turn = disc goes right/down in canvas)
+       fade  : hard hook at end — always returns left for RHBH
+               → destination Y offset and CP2 lateral position
+    ------------------------------------------------------------------ */
+
+    // -- Normalise inputs to 0-1 ranges
+    var speedN = Math.max(1, Math.min(speed, 14)) / 14;     // 0..1
+    var glideN = Math.max(1, Math.min(glide,  7)) / 7;      // 0..1
+    var turnN  = Math.max(-5, Math.min(turn,  2));           // -5..+2 (raw)
+    var fadeN  = Math.max(0, Math.min(fade,   5));           // 0..5 (raw)
+
+    // -- Layout constants
+    var PAD_X    = 48;
+    var PAD_Y    = 40;
+    var usableW  = W - PAD_X * 2;
+    var midY     = H / 2;
+
+    // -- Start point
+    var x0 = PAD_X;
+    var y0 = midY;
+
+    // -- End point: disc doesn't always reach full width; speed controls this
+    var travelX  = PAD_X + usableW * (0.35 + speedN * 0.60);
+    // Fade pulls the disc to the left (lower Y = higher on canvas = left for RHBH)
+    var fadeShift = fadeN * (H * 0.045);   // 0 – ~17px per unit
+    var x3 = travelX;
+    var y3 = midY - fadeShift;
+
+    // -- Control point 1: early flight, turn dominates
+    // turnN < 0 → anhyzer → disc goes right (higher Y)
+    // turnN > 0 → overstable/hyzer → disc goes left (lower Y) — rare, usually 0..+1
+    var cp1x = x0 + usableW * (0.18 + speedN * 0.10);
+    var turnLateral = turnN * (H * 0.062);   // neg turn = positive Y shift (right)
+    var cp1y = midY - turnLateral;
+
+    // -- Control point 2: late flight, glide & fade interact
+    // Glide pushes cp2 forward; fade pulls it left
+    var cp2x = x0 + usableW * (0.48 + glideN * 0.28);
+    var fadePull = fadeN * (H * 0.038);
+    var cp2y = midY - fadePull + (turnLateral * 0.25); // slight residual turn
+
+    // -- Clear
+    ctx.clearRect(0, 0, W, H);
+
+    // ---- Background ----
+    var style = getComputedStyle(wrap);
+    var bgColor    = style.getPropertyValue('--fp-bg').trim()    || '#1a1a1a';
+    var trackColor = style.getPropertyValue('--fp-track').trim() || '#4fc97e';
+    var discColor  = style.getPropertyValue('--fp-disc').trim()  || '#ffffff';
+
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, W, H);
+
+    // ---- Grid lines ----
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    // Vertical
+    for (var gx = PAD_X; gx <= W - PAD_X; gx += usableW / 6) {
+      ctx.beginPath(); ctx.moveTo(gx, PAD_Y * 0.5); ctx.lineTo(gx, H - PAD_Y * 0.5); ctx.stroke();
+    }
+    // Horizontal
+    for (var gy = PAD_Y; gy <= H - PAD_Y; gy += (H - PAD_Y * 2) / 4) {
+      ctx.beginPath(); ctx.moveTo(PAD_X * 0.5, gy); ctx.lineTo(W - PAD_X * 0.5, gy); ctx.stroke();
+    }
+    ctx.restore();
+
+    // ---- Centre baseline ----
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 8]);
+    ctx.beginPath();
+    ctx.moveTo(PAD_X * 0.5, midY);
+    ctx.lineTo(W - PAD_X * 0.5, midY);
+    ctx.stroke();
+    ctx.restore();
+
+    // ---- Flight path shadow / glow ----
+    ctx.save();
+    ctx.strokeStyle = trackColor;
+    ctx.lineWidth = 6;
+    ctx.shadowColor = trackColor;
+    ctx.shadowBlur = 18;
+    ctx.globalAlpha = 0.25;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x3, y3);
+    ctx.stroke();
+    ctx.restore();
+
+    // ---- Flight path main line (animated draw) ----
+    var totalLen = getBezierLength(x0, y0, cp1x, cp1y, cp2x, cp2y, x3, y3, 80);
+    var startTime = null;
+    var duration  = 900 + speedN * 400; // faster discs draw faster
+
+    function animatePath(ts) {
+      if (!startTime) startTime = ts;
+      var prog = Math.min((ts - startTime) / duration, 1);
+      var eased = easeInOutCubic(prog);
+
+      ctx.clearRect(0, 0, W, H);
+
+      // Redraw static bg layers
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, W, H);
+
+      // Grid
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+      ctx.lineWidth = 1;
+      for (var _gx = PAD_X; _gx <= W - PAD_X; _gx += usableW / 6) {
+        ctx.beginPath(); ctx.moveTo(_gx, PAD_Y * 0.5); ctx.lineTo(_gx, H - PAD_Y * 0.5); ctx.stroke();
+      }
+      for (var _gy = PAD_Y; _gy <= H - PAD_Y; _gy += (H - PAD_Y * 2) / 4) {
+        ctx.beginPath(); ctx.moveTo(PAD_X * 0.5, _gy); ctx.lineTo(W - PAD_X * 0.5, _gy); ctx.stroke();
+      }
+      ctx.restore();
+
+      // Baseline
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 8]);
+      ctx.beginPath(); ctx.moveTo(PAD_X * 0.5, midY); ctx.lineTo(W - PAD_X * 0.5, midY); ctx.stroke();
+      ctx.restore();
+
+      // Glow shadow
+      ctx.save();
+      ctx.strokeStyle = trackColor;
+      ctx.lineWidth = 6;
+      ctx.shadowColor = trackColor;
+      ctx.shadowBlur = 18;
+      ctx.globalAlpha = 0.20;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x3, y3);
+      ctx.stroke();
+      ctx.restore();
+
+      // Drawn portion of path
+      var drawLen = totalLen * eased;
+      drawPartialBezier(ctx, x0, y0, cp1x, cp1y, cp2x, cp2y, x3, y3, drawLen, totalLen, trackColor);
+
+      // Disc dot at current position
+      var t  = eased;
+      var dx = cubicBezierPoint(t, x0, cp1x, cp2x, x3);
+      var dy = cubicBezierPoint(t, y0, cp1y, cp2y, y3);
+      drawDisc(ctx, dx, dy, discColor, trackColor);
+
+      // Labels
+      drawLabels(ctx, x0, y0, x3, y3, W, H, PAD_X, style);
+
+      if (prog < 1) {
+        requestAnimationFrame(animatePath);
+      } else {
+        // Final state: draw endpoint marker
+        drawDisc(ctx, x3, y3, discColor, trackColor);
+        drawDiscArrow(ctx, cp2x, cp2y, x3, y3, trackColor);
+      }
+    }
+
+    requestAnimationFrame(animatePath);
+  }
+
+  // ---- Helpers ----
+
+  function cubicBezierPoint(t, p0, p1, p2, p3) {
+    var mt = 1 - t;
+    return mt*mt*mt*p0 + 3*mt*mt*t*p1 + 3*mt*t*t*p2 + t*t*t*p3;
+  }
+
+  function getBezierLength(x0, y0, x1, y1, x2, y2, x3, y3, steps) {
+    var len = 0, px = x0, py = y0;
+    for (var i = 1; i <= steps; i++) {
+      var t = i / steps;
+      var nx = cubicBezierPoint(t, x0, x1, x2, x3);
+      var ny = cubicBezierPoint(t, y0, y1, y2, y3);
+      len += Math.sqrt((nx - px) * (nx - px) + (ny - py) * (ny - py));
+      px = nx; py = ny;
+    }
+    return len;
+  }
+
+  function drawPartialBezier(ctx, x0, y0, x1, y1, x2, y2, x3, y3, targetLen, totalLen, color) {
+    var steps = 120;
+    var accum = 0;
+    var px = x0, py = y0;
+    var pts = [[px, py]];
+
+    for (var i = 1; i <= steps; i++) {
+      var t  = i / steps;
+      var nx = cubicBezierPoint(t, x0, x1, x2, x3);
+      var ny = cubicBezierPoint(t, y0, y1, y2, y3);
+      var seg = Math.sqrt((nx - px) * (nx - px) + (ny - py) * (ny - py));
+      accum += seg;
+      pts.push([nx, ny]);
+      px = nx; py = ny;
+      if (accum >= targetLen) break;
+    }
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (var j = 1; j < pts.length; j++) {
+      ctx.lineTo(pts[j][0], pts[j][1]);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawDisc(ctx, x, y, fillColor, glowColor) {
+    ctx.save();
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur  = 14;
+    ctx.fillStyle   = fillColor;
+    ctx.beginPath();
+    ctx.arc(x, y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = glowColor;
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawDiscArrow(ctx, cpx, cpy, ex, ey, color) {
+    var angle = Math.atan2(ey - cpy, ex - cpx);
+    var len   = 14;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 2;
+    ctx.globalAlpha = 0.7;
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = 8;
+    ctx.beginPath();
+    ctx.moveTo(ex - Math.cos(angle - 0.4) * len, ey - Math.sin(angle - 0.4) * len);
+    ctx.lineTo(ex, ey);
+    ctx.lineTo(ex - Math.cos(angle + 0.4) * len, ey - Math.sin(angle + 0.4) * len);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawLabels(ctx, x0, y0, x3, y3, W, H, PAD, style) {
+    var subtext = style.getPropertyValue('--fp-subtext').trim() || 'rgba(200,200,200,0.5)';
+    ctx.save();
+    ctx.font      = '500 11px "DM Mono", "Courier New", monospace';
+    ctx.fillStyle = subtext;
+    ctx.textAlign = 'center';
+
+    // "Utkast" at start
+    ctx.fillText('Utkast', x0, y0 + 22);
+
+    // "Landing" at end (if space)
+    if (x3 < W - PAD - 20) {
+      ctx.fillText('Landing', x3, y3 + 22);
+    }
+
+    // Side labels
+    ctx.font      = '10px "DM Mono", "Courier New", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('← Venstre (RHBH)', PAD, 18);
+    ctx.textAlign = 'left';
+    ctx.fillText('→ Høyre', PAD, H - 8);
+    ctx.restore();
+  }
+
+  function easeInOutCubic(t) {
+    return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+  }
+
+  // ---- Intersection Observer to trigger on scroll-into-view ----
+  function initSection(sectionId) {
+    var el = document.getElementById('flight-path-' + sectionId);
+    if (!el) return;
+
+    if ('IntersectionObserver' in window) {
+      var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (entry.isIntersecting) {
+            drawFlightPath(sectionId);
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.2 });
+      observer.observe(el);
+    } else {
+      drawFlightPath(sectionId);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    initSection('{{ section.id }}');
+  });
+
+  // Support Shopify theme editor live preview reloads
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() { initSection('{{ section.id }}'); });
+  } else {
+    initSection('{{ section.id }}');
+  }
+
+})();
+</script>
+
+{% schema %}
+{
+  "name": "Flight Path",
+  "tag": "div",
+  "class": "section-flight-path",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Flyverdier (overstyres av metafelt)"
+    },
+    {
+      "type": "range",
+      "id": "speed",
+      "label": "Speed",
+      "min": 1,
+      "max": 14,
+      "step": 1,
+      "default": 7
+    },
+    {
+      "type": "range",
+      "id": "glide",
+      "label": "Glide",
+      "min": 1,
+      "max": 7,
+      "step": 1,
+      "default": 4
+    },
+    {
+      "type": "range",
+      "id": "turn",
+      "label": "Turn",
+      "min": -5,
+      "max": 2,
+      "step": 1,
+      "default": -1
+    },
+    {
+      "type": "range",
+      "id": "fade",
+      "label": "Fade",
+      "min": 0,
+      "max": 5,
+      "step": 1,
+      "default": 2
+    },
+    {
+      "type": "header",
+      "content": "Visning"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_title",
+      "label": "Vis tittel og tall",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_numbers",
+      "label": "Vis flyverdier",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Tittel",
+      "default": "Flybane"
+    },
+    {
+      "type": "header",
+      "content": "Farger"
+    },
+    {
+      "type": "color",
+      "id": "bg_color",
+      "label": "Bakgrunnsfarge",
+      "default": "#111612"
+    },
+    {
+      "type": "color",
+      "id": "track_color",
+      "label": "Banefarge",
+      "default": "#5cd47a"
+    },
+    {
+      "type": "color",
+      "id": "disc_color",
+      "label": "Disc-farge",
+      "default": "#ffffff"
+    },
+    {
+      "type": "range",
+      "id": "border_radius",
+      "label": "Avrundede hjørner",
+      "min": 0,
+      "max": 24,
+      "step": 2,
+      "default": 12,
+      "unit": "px"
+    }
+  ],
+  "presets": [
+    {
+      "name": "Flight Path",
+      "category": "Product"
+    }
+  ]
+}
+{% endschema %}
